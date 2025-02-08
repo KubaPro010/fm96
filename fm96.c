@@ -9,7 +9,6 @@
 int sample_rate = 192000;
 pa_simple *input_device;
 pa_simple *output_device;
-pa_simple *mpx_device;
 
 #define buffer_maxlength 12288
 #define buffer_tlength_fragsize 12288
@@ -41,16 +40,14 @@ int main(int argc, char **argv) {
     int stereo = 1;
     char *audio_input_device = "default";
     char *audio_output_device = "default";
-    char *audio_mpx_device = "";
 
     // #region Parse Arguments
-    const char *short_opt = "s:S:i:o:m:h";
+    const char *short_opt = "s:S:i:o:h";
     struct option long_opt[] = {
         {"stereo", required_argument, NULL, 's'},
         {"sample_rate", required_argument, NULL, 'S'},
         {"input", required_argument, NULL, 'i'},
         {"output", required_argument, NULL, 'o'},
-        {"mpx", required_argument, NULL, 'm'},
         {"help", no_argument, NULL, 'h'},
         {0, 0, 0, 0}
     };
@@ -68,9 +65,6 @@ int main(int argc, char **argv) {
                 break;
             case 'o':
                 audio_output_device = optarg;
-                break;
-            case 'm':
-                audio_mpx_device = optarg;
                 break;
             case 'h':
                 printf("Usage: %s [OPTIONS]\n", argv[0]);
@@ -118,16 +112,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if(strlen(audio_mpx_device) != 0) {
-        mpx_device = pa_simple_new(NULL, "FM96", PA_STREAM_RECORD, audio_mpx_device, "MPX In", &mono_format, NULL, &buffer_attr, &error);
-        if (!mpx_device) {
-            fprintf(stderr, "pa_simple_new() failed: %s\n", pa_strerror(error));
-            pa_simple_free(input_device);
-            pa_simple_free(output_device);
-            return 1;
-        }
-    }
-
     // #endregion
 
     // #region Setup Filters/Modulaltors/Oscillators
@@ -153,20 +137,12 @@ int main(int argc, char **argv) {
 
     float audio_stereo_input[BUFFER_SIZE*2];
     float left[BUFFER_SIZE+64], right[BUFFER_SIZE+64];
-    float mpx_in[BUFFER_SIZE] = {0};
     float output[BUFFER_SIZE];
     while(running) {
         if (pa_simple_read(input_device, audio_stereo_input, sizeof(audio_stereo_input), &error) < 0) {
             fprintf(stderr, "Error reading from input device: %s\n", pa_strerror(error));
             running = 0;
             break;
-        }
-        if(strlen(audio_mpx_device) != 0) {
-            if (pa_simple_read(mpx_device, mpx_in, sizeof(mpx_in), &error) < 0) {
-                fprintf(stderr, "Error reading from MPX device: %s\n", pa_strerror(error));
-                running = 0;
-                break;
-            }
         }
         uninterleave(audio_stereo_input, left, right, BUFFER_SIZE*2);
 
@@ -192,7 +168,6 @@ int main(int argc, char **argv) {
             } else {
                 output[i] = mono;
             }
-            output[i] += mpx_in[i];
         }
 
         if (pa_simple_write(output_device, output, sizeof(output), &error) < 0) {
